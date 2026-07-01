@@ -9,6 +9,36 @@ def scrub_sensitive_info(args, text):
     return text
 
 
+def format_settings_output(parser, args, coder):
+    """Build the same text that the /settings command prints."""
+    settings = format_settings(parser, args)
+    announcements = "\n".join(coder.get_announcements())
+
+    model_sections = []
+    active_models = [
+        ("Main model", coder.main_model),
+        ("Editor model", getattr(coder.main_model, "editor_model", None)),
+        ("Weak model", getattr(coder.main_model, "weak_model", None)),
+    ]
+    for label, model in active_models:
+        if not model:
+            continue
+        info = getattr(model, "info", {}) or {}
+        if not info:
+            continue
+        model_sections.append(f"{label} ({model.name}):")
+        for k, v in sorted(info.items()):
+            model_sections.append(f"  {k}: {v}")
+        model_sections.append("")  # blank line between models
+
+    model_metadata = "\n".join(model_sections)
+
+    output = f"{announcements}\n{settings}"
+    if model_metadata:
+        output += "\n" + model_metadata
+    return output
+
+
 def format_settings(parser, args):
     show = scrub_sensitive_info(args, parser.format_values())
     # clean up the headings for consistency w/ new lines

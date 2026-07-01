@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from collections import OrderedDict
+from datetime import datetime
 from os.path import expanduser
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from prompt_toolkit.document import Document
 
 from aider import models, prompts, voice
 from aider.editor import pipe_editor
-from aider.format_settings import format_settings
+from aider.format_settings import format_settings, format_settings_output
 from aider.help import Help, install_help_extra
 from aider.io import CommandCompletionException
 from aider.llm import litellm
@@ -445,6 +446,12 @@ class Commands:
     def cmd_tokens(self, args):
         "Report on the number of tokens used by the current chat context"
 
+        report_lines = []
+
+        def output(line=""):
+            report_lines.append(line)
+            self.io.tool_output(line)
+
         res = []
 
         self.coder.choose_fence()
@@ -505,10 +512,10 @@ class Commands:
         file_res.sort()
         res.extend(file_res)
 
-        self.io.tool_output(
+        output(
             f"Approximate context window usage for {self.coder.main_model.name}, in tokens:"
         )
-        self.io.tool_output()
+        output()
 
         width = 8
         cost_width = 9
@@ -526,18 +533,19 @@ class Commands:
             cost = tk * (self.coder.main_model.info.get("input_cost_per_token") or 0)
             total_cost += cost
             msg = msg.ljust(col_width)
-            self.io.tool_output(f"${cost:7.4f} {fmt(tk)} {msg} {tip}")  # noqa: E231
+            output(f"${cost:7.4f} {fmt(tk)} {msg} {tip}")  # noqa: E231
 
-        self.io.tool_output("=" * (width + cost_width + 1))
-        self.io.tool_output(f"${total_cost:7.4f} {fmt(total)} tokens total")  # noqa: E231
+        output("=" * (width + cost_width + 1))
+        output(f"${total_cost:7.4f} {fmt(total)} tokens total")  # noqa: E231
 
         limit = self.coder.main_model.info.get("max_input_tokens") or 0
         if not limit:
+            self._write_tokens_report(report_lines)
             return
 
         remaining = limit - total
         if remaining > 1024:
-            self.io.tool_output(f"{cost_pad}{fmt(remaining)} tokens remaining in context window")
+            output(f"{cost_pad}{fmt(remaining)} tokens remaining in context window")
         elif remaining > 0:
             self.io.tool_error(
                 f"{cost_pad}{fmt(remaining)} tokens remaining in context window (use /drop or"
@@ -548,7 +556,22 @@ class Commands:
                 f"{cost_pad}{fmt(remaining)} tokens remaining, window exhausted (use /drop or"
                 " /clear to make space)"
             )
-        self.io.tool_output(f"{cost_pad}{fmt(limit)} tokens max context window size")
+        output(f"{cost_pad}{fmt(limit)} tokens max context window size")
+        self._write_tokens_report(report_lines)
+
+    def _write_tokens_report(self, report_lines):
+        "Write the token report to the session records dir, if one exists"
+        session_dir = getattr(self.coder, "session_records_dir", None)
+        if not session_dir:
+            return
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        report_file = Path(session_dir) / f"{timestamp}_tokens_report.txt"
+        try:
+            with open(report_file, "w", encoding=self.io.encoding) as f:
+                f.write("\n".join(report_lines) + "\n")
+        except OSError as e:
+            self.io.tool_error(f"Unable to write tokens report to {report_file}: {e}")
 
     def cmd_undo(self, args):
         "Undo the last git commit if it was done by aider"
@@ -1431,33 +1454,41 @@ class Commands:
 
     def cmd_settings(self, args):
         "Print out the current settings"
-        settings = format_settings(self.parser, self.args)
-        announcements = "\n".join(self.coder.get_announcements())
-
-        # Build metadata for the active models (main, editor, weak)
-        model_sections = []
-        active_models = [
-            ("Main model", self.coder.main_model),
-            ("Editor model", getattr(self.coder.main_model, "editor_model", None)),
-            ("Weak model", getattr(self.coder.main_model, "weak_model", None)),
-        ]
-        for label, model in active_models:
-            if not model:
-                continue
-            info = getattr(model, "info", {}) or {}
-            if not info:
-                continue
-            model_sections.append(f"{label} ({model.name}):")
-            for k, v in sorted(info.items()):
-                model_sections.append(f"  {k}: {v}")
-            model_sections.append("")  # blank line between models
-
-        model_metadata = "\n".join(model_sections)
-
-        output = f"{announcements}\n{settings}"
-        if model_metadata:
-            output += "\n" + model_metadata
+        output = format_settings_output(self.parser, self.args, self.coder)
         self.io.tool_output(output)
+
+    def cmd_rate(self, args):
+        "Rate the session with an integer from 0 to 5 inclusive"
+        value = args.strip()
+        if not value:
+            self.io.tool_error("Please provide a rating: an integer between 0 and 5 inclusive.")
+            return
+
+        try:
+            rating = int(value)
+        except ValueError:
+            self.io.tool_error(
+                f"Invalid rating '{value}'. Please provide an integer between 0 and 5."
+            )
+            return
+
+        if rating < 0 or rating > 5:
+            self.io.tool_error("Rating must be between 0 and 5 inclusive.")
+            return
+
+        session_dir = getattr(self.coder, "session_records_dir", None)
+        if not session_dir:
+            self.io.tool_warning("No session output directory; rating not saved.")
+            return
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        rating_file = Path(session_dir) / f"{timestamp}_rating.txt"
+        try:
+            with open(rating_file, "w", encoding=self.io.encoding) as f:
+                f.write(f"{rating}\n")
+            self.io.tool_output(f"Saved rating {rating} to {rating_file}")
+        except OSError as e:
+            self.io.tool_error(f"Unable to write rating to {rating_file}: {e}")
 
     def completions_raw_load(self, document, complete_event):
         return self.completions_raw_read_only(document, complete_event)

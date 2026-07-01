@@ -547,6 +547,26 @@ class Coder:
         for lang, cmd in lint_cmds.items():
             self.linter.set_linter(lang, cmd)
 
+    def set_session_records_dir(self, session_records_dir):
+        """Attach the session records dir and role labels to each model so
+        model.send_completion can log the JSON payloads it sends."""
+        self.session_records_dir = session_records_dir
+        if not session_records_dir:
+            return
+
+        main_model = self.main_model
+        role_map = [
+            (main_model, "main"),
+            (getattr(main_model, "editor_model", None), "editor"),
+            (getattr(main_model, "weak_model", None), "weak"),
+        ]
+        for model, role in role_map:
+            if model is None:
+                continue
+            model.session_records_dir = session_records_dir
+            if not getattr(model, "records_role", None):
+                model.records_role = role
+
     def show_announcements(self):
         bold = True
         for line in self.get_announcements():

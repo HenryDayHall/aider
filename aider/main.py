@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 import re
 import sys
 import threading
@@ -26,7 +27,11 @@ from aider.coders.base_coder import UnknownEditFormat
 from aider.commands import Commands, SwitchCoder
 from aider.copypaste import ClipboardWatcher
 from aider.deprecated import handle_deprecated_model_args
-from aider.format_settings import format_settings, scrub_sensitive_info
+from aider.format_settings import (
+    format_settings,
+    format_settings_output,
+    scrub_sensitive_info,
+)
 from aider.history import ChatSummary
 from aider.io import InputOutput
 from aider.llm import litellm  # noqa: F401; properly init litellm on launch
@@ -446,6 +451,41 @@ def sanity_check_repo(repo, io):
     io.tool_error("Unable to read git repository, it may be corrupt?")
     io.tool_output(error_msg)
     return False
+
+
+def setup_records_dir(io, parser, args, coder):
+    """If AIDER_RECORDS_DIR is set and exists, create a timestamped session
+    subfolder and write the current settings into it."""
+    records_dir = os.environ.get("AIDER_RECORDS_DIR")
+    if not records_dir:
+        return None
+
+    records_path = Path(records_dir)
+    if not records_path.is_dir():
+        io.tool_warning(
+            f"AIDER_RECORDS_DIR is set to '{records_dir}' but it is not an existing directory."
+        )
+        return None
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    session_dir = records_path / timestamp
+    try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        io.tool_error(f"Unable to create records session directory {session_dir}: {e}")
+        return None
+
+    settings_text = format_settings_output(parser, args, coder)
+    settings_file = session_dir / f"{timestamp}_settings.txt"
+    try:
+        with open(settings_file, "w", encoding=args.encoding) as f:
+            f.write(settings_text)
+        if args.verbose:
+            io.tool_output(f"Wrote session settings to {settings_file}")
+    except OSError as e:
+        io.tool_error(f"Unable to write settings to {settings_file}: {e}")
+
+    return session_dir
 
 
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
@@ -1040,6 +1080,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         ClipboardWatcher(coder.io, verbose=args.verbose)
 
     coder.show_announcements()
+
+    coder.set_session_records_dir(setup_records_dir(io, parser, args, coder))
 
     if args.show_prompts:
         coder.cur_messages += [

@@ -335,6 +335,8 @@ class Model(ModelSettings):
 
         self.name = model
         self.verbose = verbose
+        self.session_records_dir = None
+        self.records_role = None
 
         self.max_chat_history_tokens = 1024
         self.weak_model = None
@@ -1023,6 +1025,8 @@ class Model(ModelSettings):
             dump(kwargs)
         kwargs["messages"] = messages
 
+        self._write_request_json(kwargs)
+
         # Are we using github copilot?
         if "GITHUB_COPILOT_TOKEN" in os.environ:
             if "extra_headers" not in kwargs:
@@ -1035,6 +1039,30 @@ class Model(ModelSettings):
 
         res = litellm.completion(**kwargs)
         return hash_object, res
+
+    def _write_request_json(self, kwargs):
+        """If a session records dir is set, write the outgoing request JSON."""
+        session_dir = getattr(self, "session_records_dir", None)
+        if not session_dir:
+            return
+
+        role = getattr(self, "records_role", None) or "model"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+        fname = Path(session_dir) / f"{timestamp}_{role}_request.json"
+
+        try:
+            payload = json.dumps(kwargs, indent=4, default=str)
+        except Exception:
+            try:
+                payload = str(kwargs)
+            except Exception:
+                return
+
+        try:
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(payload)
+        except OSError:
+            pass
 
     def simple_send_with_retries(self, messages):
         from aider.exceptions import LiteLLMExceptions
