@@ -564,7 +564,7 @@ class Commands:
 
     def _write_tokens_report(self, report_lines):
         "Write the token report to the session records dir, if one exists"
-        if self.session_dir == None:
+        if self.session_dir is None:
             return
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -1478,13 +1478,12 @@ class Commands:
             self.io.tool_error("Rating must be between 0 and 5 inclusive.")
             return
 
-        session_dir = getattr(self.coder, "session_records_dir", None)
-        if not session_dir:
+        if self.session_dir is None:
             self.io.tool_warning("No session output directory; rating not saved.")
             return
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-        rating_file = Path(session_dir) / f"{timestamp}_rating.txt"
+        rating_file = Path(self.session_dir) / f"{timestamp}_rating.txt"
         try:
             with open(rating_file, "w", encoding=self.io.encoding) as f:
                 f.write(f"{rating}\n")
