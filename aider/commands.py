@@ -72,31 +72,6 @@ class Commands:
         self.parser = parser
         self.args = args
         self.verbose = verbose
-        self.sess= self.sess,
-    )
-
-    def __getattr__(self, name):
-        return getattr(self.coder, name)
-
-
-class Coder:
-    def __init__(
-        self,
-        io,
-        voice_language="en-US",
-        voice_format="mp3",
-        voice_input_device=None,
-        verify_ssl=True,
-        args=None,
-        parser=None,
-        verbose=False,
-        editor=None,
-        original_read_only_fnames=None,
-        session_dir=None,
-    ):
-
-        self.io = io
-        self.args  = args or []
         self.session_dir = session_dir
 
         self.verify_ssl = verify_ssl
@@ -589,7 +564,7 @@ class Coder:
 
     def _write_tokens_report(self, report_lines):
         "Write the token report to the session records dir, if one exists"
-        if self.session_dir is None:
+        if self.session_dir == None:
             return
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")

@@ -453,7 +453,7 @@ def sanity_check_repo(repo, io):
     return False
 
 
-def setup_records_dir(io, parser, args, coder):
+def create_records_dir(io, parser, args):
     """If AIDER_RECORDS_DIR is set and exists, create a timestamped session
     subfolder and write the current settings into it."""
     records_dir = os.environ.get("AIDER_RECORDS_DIR")
@@ -469,12 +469,25 @@ def setup_records_dir(io, parser, args, coder):
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     session_dir = records_path / timestamp
-    try:
-        session_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        io.tool_error(f"Unable to create records session directory {session_dir}: {e}")
-        return None
+    for i in range(100):
+        try:
+            session_dir.mkdir(parents=True, exist_ok=False)
+            return session_dir
+        except FileExistsError:
+            session_dir = records_path / f"{timestamp}_{i:02}"
+        except OSError as e:
+            io.tool_error(f"Unable to create records session directory {session_dir}: {e}")
+            break
+    else:
+        io.tool_error(f"Tried to create over 100 sessions at timestamp {timestamp}")
+    return None
 
+
+def write_settings_to_records_dir(session_dir, io, parser, args, coder):
+    if session_dir is None:
+        return
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
     settings_text = format_settings_output(parser, args, coder)
     settings_file = session_dir / f"{timestamp}_settings.txt"
     try:
@@ -484,8 +497,6 @@ def setup_records_dir(io, parser, args, coder):
             io.tool_output(f"Wrote session settings to {settings_file}")
     except OSError as e:
         io.tool_error(f"Unable to write settings to {settings_file}: {e}")
-
-    return session_dir
 
 
 def main(argv=None, input=None, output=None, force_git_root=None, return_coder=False):
@@ -972,6 +983,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
     else:
         analytics.event("no-repo")
 
+    session_dir = create_records_dir(io, parser, args)
     commands = Commands(
         io,
         None,
@@ -984,7 +996,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         verbose=args.verbose,
         editor=args.editor,
         original_read_only_fnames=read_only_fnames,
-        session_dir=session_dir,
+        session_dir=session_dir
     )
 
     summarizer = ChatSummary(
@@ -1056,6 +1068,8 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         analytics.event("exit", reason="ValueError during coder creation")
         return 1
 
+    write_settings_to_records_dir(session_dir, io, parser, args, coder)
+
     if return_coder:
         analytics.event("exit", reason="Returning coder object")
         return coder
@@ -1082,7 +1096,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
 
     coder.show_announcements()
 
-    coder.set_session_records_dir(setup_records_dir(io, parser, args, coder))
+    coder.set_session_records_dir(session_dir)
 
     if args.show_prompts:
         coder.cur_messages += [
