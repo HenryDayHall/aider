@@ -984,6 +984,7 @@ def main(argv=None, input=None, output=None, force_git_root=None, return_coder=F
         verbose=args.verbose,
         editor=args.editor,
         original_read_only_fnames=read_only_fnames,
+        session_dir=session_dir,
     )
 
     summarizer = ChatSummary(

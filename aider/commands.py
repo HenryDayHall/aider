@@ -49,6 +49,7 @@ class Commands:
             verbose=self.verbose,
             editor=self.editor,
             original_read_only_fnames=self.original_read_only_fnames,
+            session_dir=self.session_dir,
         )
 
     def __init__(
@@ -64,12 +65,39 @@ class Commands:
         verbose=False,
         editor=None,
         original_read_only_fnames=None,
+        session_dir=None,
     ):
         self.io = io
         self.coder = coder
         self.parser = parser
         self.args = args
         self.verbose = verbose
+        self.sess= self.sess,
+    )
+
+    def __getattr__(self, name):
+        return getattr(self.coder, name)
+
+
+class Coder:
+    def __init__(
+        self,
+        io,
+        voice_language="en-US",
+        voice_format="mp3",
+        voice_input_device=None,
+        verify_ssl=True,
+        args=None,
+        parser=None,
+        verbose=False,
+        editor=None,
+        original_read_only_fnames=None,
+        session_dir=None,
+    ):
+
+        self.io = io
+        self.args  = args or []
+        self.session_dir = session_dir
 
         self.verify_ssl = verify_ssl
         if voice_language == "auto":
@@ -561,12 +589,11 @@ class Commands:
 
     def _write_tokens_report(self, report_lines):
         "Write the token report to the session records dir, if one exists"
-        session_dir = getattr(self.coder, "session_records_dir", None)
-        if not session_dir:
+        if self.session_dir is None:
             return
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-        report_file = Path(session_dir) / f"{timestamp}_tokens_report.txt"
+        report_file = Path(self.session_dir) / f"{timestamp}_tokens_report.txt"
         try:
             with open(report_file, "w", encoding=self.io.encoding) as f:
                 f.write("\n".join(report_lines) + "\n")
