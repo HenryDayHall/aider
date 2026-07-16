@@ -418,6 +418,15 @@ class Commands:
         self._clear_chat_history()
         self.io.tool_output("All chat history cleared.")
 
+        if self.session_dir is not None:
+            # note that a clear has been called
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+            clear_file = Path(self.session_dir) / f"{timestamp}_clear.txt"
+            try:
+                open(clear_file, 'w').close()
+            except OSError as e:
+                self.io.tool_error(f"Unable to note clear with {clear_file}: {e}")
+
     def _drop_all_files(self):
         self.coder.abs_fnames = set()
 
