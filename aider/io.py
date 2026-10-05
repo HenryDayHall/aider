@@ -26,10 +26,12 @@ from prompt_toolkit.shortcuts import CompleteStyle, PromptSession
 from prompt_toolkit.styles import Style
 from pygments.lexers import MarkdownLexer, guess_lexer_for_filename
 from pygments.token import Token
+from rich import box
 from rich.color import ColorParseError
 from rich.columns import Columns
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.style import Style as RichStyle
 from rich.text import Text
 
@@ -270,6 +272,9 @@ class InputOutput:
         self.editingmode = editingmode
         self.multiline_mode = multiline_mode
         self.bell_on_next_input = False
+        # True once a prompt has gone to the LLM, until it is rated with /rate.
+        # Kept here because io is the one object shared by every Coder in a session.
+        self.rating_pending = False
         self.notifications = notifications
         if notifications and notifications_command is None:
             self.notifications_command = self.get_default_notification_command()
@@ -991,6 +996,26 @@ class InputOutput:
 
     def tool_warning(self, message="", strip=True):
         self._tool_message(message, strip, self.tool_warning_color)
+
+    def tool_warning_banner(self, message, title=None):
+        """Show a hard-to-miss warning: a bold, full-width panel with a heavy border."""
+        for line in message.splitlines():
+            if line.strip():
+                self.append_chat_history(line, linebreak=True, blockquote=True)
+
+        style = "bold"
+        if self.pretty and self.tool_warning_color:
+            style += " " + ensure_hash_prefix(self.tool_warning_color)
+
+        panel = Panel(
+            Text(message, justify="center", style=style),
+            title=Text(f" {title} ", style=style) if title else None,
+            box=box.HEAVY,
+            border_style=style,
+            padding=(1, 2),
+        )
+        self.console.print()
+        self.console.print(panel)
 
     def tool_output(self, *messages, log_only=False, bold=False):
         if messages:

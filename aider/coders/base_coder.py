@@ -30,7 +30,7 @@ from rich.console import Console
 
 from aider import __version__, models, prompts, urls, utils
 from aider.analytics import Analytics
-from aider.commands import Commands
+from aider.commands import RATE_LABELS, Commands
 from aider.exceptions import LiteLLMExceptions
 from aider.history import ChatSummary
 from aider.io import ConfirmGroup, InputOutput
@@ -1015,9 +1015,30 @@ class Coder:
             self.event("exit", reason="Control-C")
             sys.exit()
 
+        # If ^C interrupted a streaming reply, finish drawing it first. Otherwise the
+        # live markdown display redraws over (and erases) whatever we print next.
+        self._stop_live_output()
+
         self.io.tool_warning("\n\n^C again to exit")
 
+        if self.io.rating_pending and self.commands.session_dir is not None:
+            self.io.tool_warning_banner(
+                "You haven't rated the last response.\n\n"
+                f"Use  /rate 0-5  or  /rate {' | '.join(RATE_LABELS)}\n"
+                "before you press Ctrl-C again to exit.",
+                title="RATING NEEDED",
+            )
+
         self.last_keyboard_interrupt = now
+
+    def _stop_live_output(self):
+        """Stop the waiting spinner and finish any streaming markdown display."""
+        self._stop_waiting_spinner()
+        if getattr(self, "mdstream", None):
+            try:
+                self.live_incremental_response(True)
+            finally:
+                self.mdstream = None
 
     def summarize_start(self):
         if not self.summarizer.too_big(self.done_messages):
@@ -1450,6 +1471,8 @@ class Coder:
         messages = chunks.all_messages()
         if not self.check_tokens(messages):
             return
+        # This prompt is going to the model, so it now needs a /rate
+        self.io.rating_pending = True
         self.warm_cache(chunks)
 
         if self.verbose:

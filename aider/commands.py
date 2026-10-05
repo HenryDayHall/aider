@@ -27,6 +27,9 @@ from aider.utils import is_image_file
 
 from .dump import dump  # noqa: F401
 
+# Accepted by /rate in addition to the integers 0-5
+RATE_LABELS = ("timeout", "impatient", "other")
+
 
 class SwitchCoder(Exception):
     def __init__(self, placeholder=None, **kwargs):
@@ -1469,23 +1472,25 @@ class Commands:
         self.io.tool_output(output)
 
     def cmd_rate(self, args):
-        "Rate the session with an integer from 0 to 5 inclusive"
+        "Rate the session with an integer from 0 to 5 inclusive, or timeout/impatient/other"
         value = args.strip()
+        choices = f"an integer between 0 and 5 inclusive, or one of: {', '.join(RATE_LABELS)}"
         if not value:
-            self.io.tool_error("Please provide a rating: an integer between 0 and 5 inclusive.")
+            self.io.tool_error(f"Please provide a rating: {choices}.")
             return
 
-        try:
-            rating = int(value)
-        except ValueError:
-            self.io.tool_error(
-                f"Invalid rating '{value}'. Please provide an integer between 0 and 5."
-            )
-            return
+        if value.lower() in RATE_LABELS:
+            rating = value.lower()
+        else:
+            try:
+                rating = int(value)
+            except ValueError:
+                self.io.tool_error(f"Invalid rating '{value}'. Please provide {choices}.")
+                return
 
-        if rating < 0 or rating > 5:
-            self.io.tool_error("Rating must be between 0 and 5 inclusive.")
-            return
+            if rating < 0 or rating > 5:
+                self.io.tool_error("Rating must be between 0 and 5 inclusive.")
+                return
 
         if self.session_dir is None:
             self.io.tool_warning("No session output directory; rating not saved.")
@@ -1499,6 +1504,13 @@ class Commands:
             self.io.tool_output(f"Saved rating {rating} to {rating_file}")
         except OSError as e:
             self.io.tool_error(f"Unable to write rating to {rating_file}: {e}")
+            return
+
+        # Only a rating that actually reached disk counts
+        self.io.rating_pending = False
+
+    def completions_rate(self):
+        return [str(n) for n in range(6)] + list(RATE_LABELS)
 
     def completions_raw_load(self, document, complete_event):
         return self.completions_raw_read_only(document, complete_event)
