@@ -30,7 +30,7 @@ from rich.console import Console
 
 from aider import __version__, models, prompts, urls, utils
 from aider.analytics import Analytics
-from aider.commands import RATE_LABELS, Commands
+from aider.commands import RATE_LABELS, RATE_REMINDER_TURNS, Commands
 from aider.exceptions import LiteLLMExceptions
 from aider.history import ChatSummary
 from aider.io import ConfirmGroup, InputOutput
@@ -903,6 +903,8 @@ class Coder:
                 try:
                     if not self.io.placeholder:
                         self.copy_context()
+                    if self.end_turn():
+                        self.nudge_to_rate()
                     user_message = self.get_input()
                     self.run_one(user_message, preproc)
                     self.show_undo_hint()
@@ -1021,15 +1023,39 @@ class Coder:
 
         self.io.tool_warning("\n\n^C again to exit")
 
+        # ^C ends the turn in progress. Count it now, so the banner below has the right
+        # number and the between-turns nudge doesn't repeat it.
+        self.end_turn()
+
         if self.io.rating_pending and self.commands.session_dir is not None:
+            n = self.io.unrated_turns
+            unrated = f"the last {n} responses" if n > 1 else "the last response"
             self.io.tool_warning_banner(
-                "You haven't rated the last response.\n\n"
+                f"You haven't rated {unrated}.\n\n"
                 f"Use  /rate 0-5  or  /rate {' | '.join(RATE_LABELS)}\n"
                 "before you press Ctrl-C again to exit.",
                 title="RATING NEEDED",
             )
 
         self.last_keyboard_interrupt = now
+
+    def end_turn(self):
+        """If the turn in progress sent anything to the LLM, count it as unrated.
+        Returns True if it did."""
+        if not self.io.turn_sent_request:
+            return False
+        self.io.turn_sent_request = False
+        self.io.unrated_turns += 1
+        return True
+
+    def nudge_to_rate(self):
+        """Between turns, suggest /rate once RATE_REMINDER_TURNS or more turns are unrated."""
+        n = self.io.unrated_turns
+        if n < RATE_REMINDER_TURNS or self.commands.session_dir is None:
+            return
+        self.io.tool_warning(
+            f"You haven't rated the last {n} responses. Consider rating them with /rate."
+        )
 
     def _stop_live_output(self):
         """Stop the waiting spinner and finish any streaming markdown display."""
@@ -1473,6 +1499,7 @@ class Coder:
             return
         # This prompt is going to the model, so it now needs a /rate
         self.io.rating_pending = True
+        self.io.turn_sent_request = True
         self.warm_cache(chunks)
 
         if self.verbose:

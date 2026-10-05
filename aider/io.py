@@ -275,6 +275,11 @@ class InputOutput:
         # True once a prompt has gone to the LLM, until it is rated with /rate.
         # Kept here because io is the one object shared by every Coder in a session.
         self.rating_pending = False
+        # A turn is one input from the user plus everything aider does in response
+        # (retries, reflections, editor calls). Count the turns that reached the LLM
+        # since the last /rate, and whether the turn in progress has sent a request.
+        self.unrated_turns = 0
+        self.turn_sent_request = False
         self.notifications = notifications
         if notifications and notifications_command is None:
             self.notifications_command = self.get_default_notification_command()

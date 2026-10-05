@@ -30,6 +30,9 @@ from .dump import dump  # noqa: F401
 # Accepted by /rate in addition to the integers 0-5
 RATE_LABELS = ("timeout", "impatient", "other")
 
+# Between turns, nudge the user to /rate once this many turns have gone unrated
+RATE_REMINDER_TURNS = 3
+
 
 class SwitchCoder(Exception):
     def __init__(self, placeholder=None, **kwargs):
@@ -1506,8 +1509,11 @@ class Commands:
             self.io.tool_error(f"Unable to write rating to {rating_file}: {e}")
             return
 
-        # Only a rating that actually reached disk counts
+        # Only a rating that actually reached disk counts. It covers every turn so far,
+        # including one still in progress (e.g. when /rate runs from /load).
         self.io.rating_pending = False
+        self.io.unrated_turns = 0
+        self.io.turn_sent_request = False
 
     def completions_rate(self):
         return [str(n) for n in range(6)] + list(RATE_LABELS)
